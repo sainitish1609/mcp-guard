@@ -68,26 +68,61 @@ func TestScanEnvSecretInlineProse(t *testing.T) {
 
 func TestScanURICredentials(t *testing.T) {
 	e := New(nil)
-	cases := []string{
-		"postgres://admin:s3cr3tpw@db.internal:5432/app",
-		"mongodb+srv://user:my-p%40ss@cluster0.mongodb.net/test",
-		"redis://default:hunter2@cache:6379",
+	cases := []struct {
+		in     string
+		secret string // must not appear in output
+		keep   string // must still appear (scheme/user/host preserved)
+	}{
+		{"postgres://admin:s3cr3tpw@db.internal:5432/app", "s3cr3tpw", "postgres://admin:"},
+		{"mongodb+srv://user:my-pass@cluster0.mongodb.net/test", "my-pass", "@cluster0.mongodb.net"},
+		{"redis://default:hunter2@cache:6379", "hunter2", "redis://default:"},
 	}
-	for _, in := range cases {
-		got, hits := e.Scan(in)
-		if strings.Contains(got, "s3cr3tpw") || strings.Contains(got, "my-p%40ss") || strings.Contains(got, "hunter2") {
+	for _, c := range cases {
+		got, hits := e.Scan(c.in)
+		if strings.Contains(got, c.secret) {
 			t.Fatalf("uri password leaked: %q", got)
 		}
 		if !strings.Contains(got, "[REDACTED:uri-credentials]") {
 			t.Fatalf("expected uri password masked, got %q", got)
 		}
-		// The scheme and username must be preserved for readability.
-		if !strings.Contains(got, "://") {
-			t.Fatalf("uri scheme damaged: %q", got)
+		if !strings.Contains(got, c.keep) {
+			t.Fatalf("expected %q preserved, got %q", c.keep, got)
 		}
 		if len(hits) == 0 {
-			t.Fatalf("expected a hit for %q", in)
+			t.Fatalf("expected a hit for %q", c.in)
 		}
+	}
+}
+
+// Bug A: a password containing '@' must be masked in full, not split on the
+// first '@' leaving the tail visible.
+func TestScanURIPasswordWithAtSign(t *testing.T) {
+	e := New(nil)
+	in := "postgres://app_admin:P@ssw0rd123!@db.internal.net:5432/prod"
+	got, _ := e.Scan(in)
+	if strings.Contains(got, "ssw0rd123") || strings.Contains(got, "P@ss") {
+		t.Fatalf("password with '@' partially leaked: %q", got)
+	}
+	want := "postgres://app_admin:[REDACTED:uri-credentials]@db.internal.net:5432/prod"
+	if got != want {
+		t.Fatalf("unexpected masking:\n got %q\nwant %q", got, want)
+	}
+}
+
+// Bug B: user-less URIs (redis://:password@host) must still match.
+func TestScanURIEmptyUsername(t *testing.T) {
+	e := New(nil)
+	in := "redis://:RedisAuthToken_98765@redis.internal.net:6379/0"
+	got, hits := e.Scan(in)
+	if strings.Contains(got, "RedisAuthToken_98765") {
+		t.Fatalf("user-less redis password leaked: %q", got)
+	}
+	want := "redis://:[REDACTED:uri-credentials]@redis.internal.net:6379/0"
+	if got != want {
+		t.Fatalf("unexpected masking:\n got %q\nwant %q", got, want)
+	}
+	if len(hits) != 1 {
+		t.Fatalf("expected 1 hit, got %d", len(hits))
 	}
 }
 

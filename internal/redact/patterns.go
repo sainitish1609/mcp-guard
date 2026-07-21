@@ -28,9 +28,13 @@ var builtinPatterns = []Pattern{
 	{Name: "stripe-key", re: regexp.MustCompile(`\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b`)},
 	{Name: "private-key", re: regexp.MustCompile(`(?s)-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----.*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----`)},
 	{Name: "jwt", re: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b`)},
-	// Credentials embedded in a connection URI, e.g. postgres://user:password@host
-	// or mongodb+srv://user:password@host. Masks only the password (group 2).
-	{Name: "uri-credentials", re: regexp.MustCompile(`(?i)([a-z][a-z0-9+.\-]*://[^:@/\s]+:)([^@/\s]+)(@)`), maskGroup: 2},
+	// Credentials embedded in a connection URI, e.g. postgres://user:password@host,
+	// mongodb+srv://user:password@host, or redis://:password@host (empty user).
+	// Masks only the password (group 2). The username is optional ([^:@/\s]*) so
+	// user-less forms match, and the password ([^\s]+, greedy) extends to the LAST
+	// '@' before the host so passwords containing '@' (e.g. P@ssw0rd!) are fully
+	// masked rather than split on the first '@'.
+	{Name: "uri-credentials", re: regexp.MustCompile(`(?i)([a-z][a-z0-9+.\-]*://[^:@/\s]*:)([^\s]+)(@[^/@:\s]+(?::\d+)?)`), maskGroup: 2},
 	// Generic KEY/TOKEN/SECRET/PASSWORD assignment (as in .env dumps or inline
 	// prose). Masks only the value (group 3) so the variable name stays readable.
 	// Unanchored so inline `FOO_PASSWORD=...` is caught too.
