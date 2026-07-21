@@ -1,0 +1,6 @@
+# Local database store
+.DBStore
+*.dbstore
+
+# macOS system file (if typo for .DS_Store)
+.DS_Store

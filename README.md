@@ -5,6 +5,10 @@
 
 > **The local privacy firewall, secret sanitizer, and token compressor for AI coding agents.**
 
+A security guardrail proxy for Model Context Protocol (MCP) servers.
+
+![mcp-guard demo](assets/demo.gif)
+
 `mcp-guard` is an ultra-fast, zero-dependency Go binary that sits transparently in the stdio JSON-RPC path between your editor (Claude Code, Cursor, VS Code) and any [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server.
 
 It acts as a local security proxy—ensuring your sensitive API keys, database credentials, and protected paths (`~/.ssh`, `.env`, `.git`) are **never leaked to cloud LLMs** or mutated by autonomous tool execution.
