@@ -83,14 +83,12 @@ Strip redundant line/block comments and whitespace to save context window capaci
 
 ```bash
 # Install via Go
-go install [github.com/sainitish1609/mcp-guard/cmd/mcp-guard@latest](https://github.com/sainitish1609/mcp-guard/cmd/mcp-guard@latest)
+go install github.com/sainitish1609/mcp-guard/cmd/mcp-guard@latest
 
 # Or build from source
-git clone [https://github.com/sainitish1609/mcp-guard.git](https://github.com/sainitish1609/mcp-guard.git)
+git clone https://github.com/sainitish1609/mcp-guard.git
 cd mcp-guard
 go build -o mcp-guard ./cmd/mcp-guard
-
-```
 
 ---
 
