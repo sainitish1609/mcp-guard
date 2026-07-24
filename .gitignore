@@ -1,6 +1,26 @@
+# Compiled binary (build with: go build -o mcp-guard ./cmd/mcp-guard)
+/mcp-guard
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & coverage output
+*.test
+*.out
+coverage.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
 # Local database store
 .DBStore
 *.dbstore
-
-# macOS system file (if typo for .DS_Store)
-.DS_Store

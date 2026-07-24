@@ -457,22 +457,34 @@ func (lr *lineReader) readLine() ([]byte, error) {
 	return lr.r.ReadBytes('\n')
 }
 
-// installSignals wires SIGUSR1 (interim stats snapshot, when stats is on) and
-// SIGHUP (hot config reload) until ctx is done. It returns a stop function.
+// installSignals wires the interim stats snapshot (when stats is on) and the hot
+// config reload signal until ctx is done. It returns a stop function. On
+// platforms without these signals (Windows) it is a no-op.
 func (p *Proxy) installSignals(ctx context.Context, stats bool) func() {
-	ch := make(chan os.Signal, 2)
-	signal.Notify(ch, syscall.SIGUSR1, syscall.SIGHUP)
+	watch := make([]os.Signal, 0, 2)
+	if statsSignal != nil {
+		watch = append(watch, statsSignal)
+	}
+	if reloadSignal != nil {
+		watch = append(watch, reloadSignal)
+	}
+	if len(watch) == 0 {
+		return func() {}
+	}
+
+	ch := make(chan os.Signal, len(watch))
+	signal.Notify(ch, watch...)
 	done := make(chan struct{})
 	go func() {
 		for {
 			select {
 			case s := <-ch:
-				switch s {
-				case syscall.SIGUSR1:
+				switch {
+				case statsSignal != nil && s == statsSignal:
 					if stats {
 						p.printSummary()
 					}
-				case syscall.SIGHUP:
+				case reloadSignal != nil && s == reloadSignal:
 					p.doReload()
 				}
 			case <-ctx.Done():

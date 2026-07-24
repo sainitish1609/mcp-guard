@@ -1,5 +1,6 @@
 # mcp-guard 🛡️
 
+[![CI](https://github.com/sainitish1609/mcp-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/sainitish1609/mcp-guard/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/sainitish1609/mcp-guard)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](go.mod)
@@ -118,15 +119,31 @@ mcp-guard session summary
 
 ## 🚀 Installation
 
-```bash
-# Install via Go
-go install github.com/sainitish1609/mcp-guard/cmd/mcp-guard@latest
+**Prebuilt binary** (no Go toolchain required) — grab it from the [latest release](https://github.com/sainitish1609/mcp-guard/releases/latest):
 
-# Or build from source
+```bash
+# macOS (Apple Silicon) — swap darwin_arm64 for your platform
+curl -sSL https://github.com/sainitish1609/mcp-guard/releases/latest/download/mcp-guard_darwin_arm64.tar.gz | tar xz
+sudo mv mcp-guard /usr/local/bin/
+```
+
+**With Go:**
+
+```bash
+go install github.com/sainitish1609/mcp-guard/cmd/mcp-guard@latest
+```
+
+**From source:**
+
+```bash
 git clone https://github.com/sainitish1609/mcp-guard.git
 cd mcp-guard
 go build -o mcp-guard ./cmd/mcp-guard
 ```
+
+Builds for macOS, Linux, and Windows (amd64 + arm64). Every protection works on all
+platforms; the `SIGHUP`/`SIGUSR1` signal hooks are Unix-only, and the end-of-session
+summary still prints on exit everywhere.
 
 ---
 
