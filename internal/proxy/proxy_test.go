@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -211,5 +212,38 @@ func TestHotReloadSwapsPolicy(t *testing.T) {
 	p.client = &out
 	if fwd := p.transformRequest(shell); fwd != nil {
 		t.Fatal("after reload to strict, shell should be blocked")
+	}
+}
+
+func TestNestedJSONStaysValidAndUncorruptedInAuditMode(t *testing.T) {
+	// A tool result whose text is itself a JSON document containing an npm-style
+	// integrity hash. In the default (audit-only) entropy mode, the hash must NOT
+	// be masked — so the structured value is preserved — and the outer JSON-RPC
+	// must remain valid.
+	p := newProxy(config.Default())
+	inner := `{"name":"pkg","integrity":"sha512-Uu7wPT0k1vpFEUvKXPQBnpuwFCUxYX3aXvcS8fSlXB7pKZlkZAHcgSDF1IB6TjaGqQOtG68V0F3Cn7XVEdAA=="}`
+	line := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":` + jsonString(inner) + `}]}}` + "\n")
+	out := p.transformResponse(line)
+
+	// Outer protocol JSON must parse.
+	var m map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(out))), &m); err != nil {
+		t.Fatalf("outer JSON invalid after transform: %v", err)
+	}
+	// The integrity hash must survive intact (audit-only does not mask).
+	if !strings.Contains(string(out), "sha512-Uu7wPT0k1vpFEUvKXPQBnpuwFCUxYX3aXvcS8fSlXB7pKZlkZAHcgSDF1IB6TjaGqQOtG68V0F3Cn7XVEdAA==") {
+		t.Fatalf("integrity hash was corrupted in audit-only mode: %s", out)
+	}
+}
+
+func TestStrictProfileMasksEntropy(t *testing.T) {
+	cfg := config.Default()
+	cfg.ApplyProfile("strict")
+	p := newProxy(cfg)
+	// A bare high-entropy token (no named pattern) inside a result.
+	line := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"session Xk9mQ2vBnR7wLp4sZa1cFd8gHj0tYu3E ok"}]}}` + "\n")
+	out := p.transformResponse(line)
+	if !strings.Contains(string(out), "[REDACTED:high-entropy]") {
+		t.Fatalf("strict profile should mask entropy, got %s", out)
 	}
 }

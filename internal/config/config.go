@@ -24,6 +24,7 @@ const (
 type Config struct {
 	RedactSecrets       bool            `json:"redact_secrets"`
 	EntropyScan         bool            `json:"entropy_scan"`
+	EntropyMask         bool            `json:"entropy_mask"`
 	ScanInjection       bool            `json:"scan_injection"`
 	NeutralizeInjection bool            `json:"neutralize_injection"`
 	ScanRequests        bool            `json:"scan_requests"`
@@ -85,6 +86,7 @@ func Default() Config {
 	return Config{
 		RedactSecrets:       true,
 		EntropyScan:         true,
+		EntropyMask:         false, // audit-only by default; entropy is a hint, not a verdict
 		ScanInjection:       true,
 		NeutralizeInjection: true,
 		ScanRequests:        true,

@@ -57,7 +57,7 @@ When AI agents run tools like `@modelcontextprotocol/server-filesystem` or `post
 
 **Known limitations — read these before relying on it**
 
-- **Detection is heuristic.** Secret matching is pattern- plus entropy-based, and injection detection is signature-based. A novel credential format or a carefully-worded injection *will* get through. Treat it as a layer, not a guarantee.
+- **Detection is heuristic.** Named-pattern secret matching is high-precision and masks by default; the entropy catch-all is lower-precision (it fires on integrity hashes and base64 fixtures) so it is **audit-only by default** and only masks when you opt in. Injection detection is signature-based. A novel credential format or a carefully-worded injection *will* get through — treat it as a layer, not a guarantee.
 - **It only sees traffic that flows through it.** An MCP server that makes its own outbound network calls (a `fetch`-style server, telemetry, a phone-home) is invisible to `mcp-guard`. It secures the client↔server channel, not the server's own egress.
 - **Request-side secret scanning warns, it does not block.** Some tools legitimately need credentials in their arguments, so blocking by default would break them.
 - **Compression can alter text.** It is off by default and skips read-for-edit tools, because rewriting a file the agent is about to patch corrupts the diff.
@@ -91,7 +91,7 @@ Scans **every string** in a tool result — including `structuredContent` mirror
 * **Cloud & AI keys:** AWS (`AKIA…`), Anthropic, OpenAI, Stripe, Google, Slack, GitHub PATs.
 * **Database URIs:** masks the password in `postgres://user:pass@host`, `mongodb+srv://`, `redis://:pass@host` — even passwords containing `@`.
 * **Private keys & JWTs:** full-block masking for RSA/PEM keys and Bearer tokens.
-* **🆕 High-entropy catch-all:** an optional Shannon-entropy pass masks *unknown-format* generated secrets that match no named pattern, using a character-class discriminator to avoid flagging git SHAs, UUIDs, or file paths.
+* **🆕 High-entropy catch-all (audit-only by default):** a Shannon-entropy pass flags *unknown-format* generated secrets that match no named pattern, using a character-class discriminator to avoid git SHAs, UUIDs, and file paths. Because the heuristic also fires on integrity hashes, base64 fixtures, and signed URLs, it **reports** by default (logging the detector and byte offsets) and only masks when you opt in with `--entropy-mask` or `--profile strict`. This keeps it from silently corrupting otherwise-valid structured data.
 
 ```env
 # Before mcp-guard:
@@ -102,7 +102,8 @@ SESSION=nQ7wLp4sZa1cFd8gHj0tYuXk9mR2vB3E
 # After mcp-guard:
 AWS_ACCESS_KEY_ID=[REDACTED:aws-access-key]
 DATABASE_URL=postgres://admin:[REDACTED:uri-credentials]@db.internal:5432/prod
-SESSION=[REDACTED:high-entropy]
+SESSION=[REDACTED:high-entropy]   # entropy match — masked under --entropy-mask / --profile strict;
+                                  # audit-only (logged, not masked) by default
 ```
 
 ### 2. 🧬 Prompt-Injection & Tool-Poisoning Defense 🆕
@@ -229,7 +230,8 @@ Point your client at `http://localhost:8080` and every JSON and SSE message is i
 | --- | --- | --- |
 | `--profile` | *(none)* | Policy preset: `strict` \| `standard` \| `permissive` |
 | `--redact-secrets` | `true` | Mask API keys, tokens, and database passwords in results |
-| `--entropy-scan` | `true` | Also mask high-entropy tokens matching no known pattern |
+| `--entropy-scan` | `true` | Flag high-entropy tokens matching no known pattern (audit-only unless `--entropy-mask`) |
+| `--entropy-mask` | `false` | Mask entropy findings instead of just auditing them (noisier: hashes, base64, signed URLs) |
 | `--scan-injection` | `true` | Strip hidden Unicode & neutralize prompt-injection directives |
 | `--neutralize-injection` | `true` | Rewrite detected directives (off = detect + log only) |
 | `--scan-requests` | `true` | Warn when outbound tool-call arguments contain secrets |

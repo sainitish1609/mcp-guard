@@ -49,7 +49,8 @@ func run(argv []string) int {
 		configPath    = fs.String("config", "", "path to a JSON config file (optional)")
 		profile       = fs.String("profile", "", "policy preset: strict|standard|permissive")
 		redactSecrets = fs.Bool("redact-secrets", true, "mask API keys/secrets in tool results")
-		entropyScan   = fs.Bool("entropy-scan", true, "also mask high-entropy tokens that match no known pattern")
+		entropyScan   = fs.Bool("entropy-scan", true, "flag high-entropy tokens that match no known pattern")
+		entropyMask   = fs.Bool("entropy-mask", false, "mask entropy findings instead of audit-only (noisy: hashes, base64, signed URLs)")
 		scanInjection = fs.Bool("scan-injection", true, "strip hidden Unicode and neutralize prompt-injection directives")
 		neutralize    = fs.Bool("neutralize-injection", true, "rewrite detected injection directives (off = detect+log only)")
 		scanRequests  = fs.Bool("scan-requests", true, "warn when outbound tool-call arguments contain secrets")
@@ -92,6 +93,7 @@ func run(argv []string) int {
 		}
 		applyOverride(setFlags, "redact-secrets", func() { cfg.RedactSecrets = *redactSecrets })
 		applyOverride(setFlags, "entropy-scan", func() { cfg.EntropyScan = *entropyScan })
+		applyOverride(setFlags, "entropy-mask", func() { cfg.EntropyMask = *entropyMask })
 		applyOverride(setFlags, "scan-injection", func() { cfg.ScanInjection = *scanInjection })
 		applyOverride(setFlags, "neutralize-injection", func() { cfg.NeutralizeInjection = *neutralize })
 		applyOverride(setFlags, "scan-requests", func() { cfg.ScanRequests = *scanRequests })

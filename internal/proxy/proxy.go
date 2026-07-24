@@ -62,6 +62,7 @@ type Proxy struct {
 func buildEngines(cfg config.Config) *engines {
 	red := redact.New(cfg.CustomPatterns)
 	red.EnableEntropy(cfg.EntropyScan)
+	red.SetEntropyMask(cfg.EntropyMask)
 	return &engines{
 		cfg:      cfg,
 		guard:    guard.New(cfg),
@@ -327,15 +328,33 @@ func (p *Proxy) accountBlock(reason string) {
 }
 
 // scanArgSecrets runs the redactor over every string argument and returns the
-// hits without altering the arguments.
+// hits without altering the arguments. Audit-only entropy findings are excluded
+// so a request warning means a genuine named-pattern match, not a base64 blob.
 func (p *Proxy) scanArgSecrets(e *engines, args map[string]json.RawMessage) []redact.Hit {
 	var all []redact.Hit
 	for _, s := range argStrings(args) {
 		if _, hits := e.redactor.Scan(s); len(hits) > 0 {
-			all = append(all, hits...)
+			for _, h := range hits {
+				if !h.Audit {
+					all = append(all, h)
+				}
+			}
 		}
 	}
 	return all
+}
+
+// splitHits partitions hits into those that were masked and those that were only
+// audited (entropy in its default audit-only mode).
+func splitHits(hits []redact.Hit) (masked, audited []redact.Hit) {
+	for _, h := range hits {
+		if h.Audit {
+			audited = append(audited, h)
+		} else {
+			masked = append(masked, h)
+		}
+	}
+	return masked, audited
 }
 
 // pumpServerToClient reads server messages, applies redaction/compression to
@@ -404,9 +423,18 @@ func (p *Proxy) transformResponse(line []byte) []byte {
 			changed = true
 		}
 		if len(hits) > 0 {
-			p.log.Redacted(tool, redact.Summary(hits))
-			for _, h := range hits {
-				p.stats.AddRedaction(h.Pattern, h.Count)
+			masked, audited := splitHits(hits)
+			if len(masked) > 0 {
+				p.log.Redacted(tool, redact.Summary(masked))
+				for _, h := range masked {
+					p.stats.AddRedaction(h.Pattern, h.Count)
+				}
+			}
+			if len(audited) > 0 {
+				p.log.EntropyAudit(tool, redact.AuditSummary(audited))
+				for _, h := range audited {
+					p.stats.EntropyAudited.Add(int64(h.Count))
+				}
 			}
 		}
 		if len(findings) > 0 {

@@ -23,6 +23,7 @@ func (c *Config) ApplyProfile(name string) bool {
 	case "strict":
 		c.RedactSecrets = true
 		c.EntropyScan = true
+		c.EntropyMask = true // strict opts into masking entropy findings, not just auditing
 		c.ScanInjection = true
 		c.NeutralizeInjection = true
 		c.ScanRequests = true
@@ -36,6 +37,7 @@ func (c *Config) ApplyProfile(name string) bool {
 	case "permissive":
 		c.RedactSecrets = true
 		c.EntropyScan = false
+		c.EntropyMask = false
 		c.ScanInjection = true
 		c.NeutralizeInjection = false // detect-only
 		c.ScanRequests = false

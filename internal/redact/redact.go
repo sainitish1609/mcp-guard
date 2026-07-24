@@ -11,16 +11,22 @@ import (
 	"github.com/sainitish1609/mcp-guard/internal/config"
 )
 
-// Hit records a single redaction for auditing.
+// Hit records a single pattern's activity for auditing. Audit is true for
+// findings that were detected but NOT masked (the entropy catch-all in its
+// default audit-only mode); Spans carries the byte offsets of those findings in
+// the scanned string so the log can point at exactly what tripped the detector.
 type Hit struct {
 	Pattern string
 	Count   int
+	Audit   bool
+	Spans   [][2]int
 }
 
 // Engine holds the compiled pattern set (built-ins plus any custom patterns).
 type Engine struct {
-	patterns []Pattern
-	entropy  bool
+	patterns    []Pattern
+	entropy     bool
+	entropyMask bool
 }
 
 // New builds an Engine from the built-in patterns and any user custom patterns.
@@ -42,9 +48,15 @@ func New(custom []config.CustomPattern) *Engine {
 	return &Engine{patterns: pats}
 }
 
-// EnableEntropy toggles the high-entropy catch-all pass, which masks generated
+// EnableEntropy toggles the high-entropy catch-all pass, which flags generated
 // credentials that match no named pattern.
 func (e *Engine) EnableEntropy(on bool) { e.entropy = on }
+
+// SetEntropyMask controls whether entropy findings are masked (true) or only
+// reported for auditing (false). Audit-only is the default because the entropy
+// heuristic legitimately fires on integrity hashes, base64 fixtures, and signed
+// URLs — masking those would silently corrupt otherwise-valid data.
+func (e *Engine) SetEntropyMask(on bool) { e.entropyMask = on }
 
 // mask is the redaction placeholder for a given pattern name.
 func mask(name string) string { return "[REDACTED:" + name + "]" }
@@ -73,9 +85,14 @@ func (e *Engine) Scan(text string) (string, []Hit) {
 		hits = append(hits, Hit{Pattern: p.Name, Count: len(matches)})
 	}
 	if e.entropy {
-		if masked, count := scanEntropy(out); count > 0 {
-			out = masked
-			hits = append(hits, Hit{Pattern: "high-entropy", Count: count})
+		if masked, spans := scanEntropy(out, e.entropyMask); len(spans) > 0 {
+			out = masked // unchanged in audit-only mode
+			hits = append(hits, Hit{
+				Pattern: "high-entropy",
+				Count:   len(spans),
+				Audit:   !e.entropyMask,
+				Spans:   spans,
+			})
 		}
 	}
 	return out, hits
@@ -119,6 +136,30 @@ func Summary(hits []Hit) string {
 			s += " "
 		}
 		s += fmt.Sprintf("%s:%d", h.Pattern, h.Count)
+	}
+	return s
+}
+
+// AuditSummary renders audit-only hits with their byte offsets, e.g.
+// "high-entropy:2 offsets=[12-44,80-120]", so an operator can locate exactly
+// what the detector flagged without masking anything.
+func AuditSummary(hits []Hit) string {
+	s := ""
+	for i, h := range hits {
+		if i > 0 {
+			s += " "
+		}
+		s += fmt.Sprintf("%s:%d", h.Pattern, h.Count)
+		if len(h.Spans) > 0 {
+			s += " offsets=["
+			for j, sp := range h.Spans {
+				if j > 0 {
+					s += ","
+				}
+				s += fmt.Sprintf("%d-%d", sp[0], sp[1])
+			}
+			s += "]"
+		}
 	}
 	return s
 }

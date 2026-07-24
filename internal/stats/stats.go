@@ -24,6 +24,7 @@ type Stats struct {
 	InjectionsFound atomic.Int64
 	RequestSecrets  atomic.Int64
 	AnomalyWarnings atomic.Int64
+	EntropyAudited  atomic.Int64
 	TokensSaved     atomic.Int64
 	BytesSaved      atomic.Int64
 
@@ -62,7 +63,7 @@ func (s *Stats) Empty() bool {
 		s.ReadsBlocked.Load() == 0 && s.ShellBlocked.Load() == 0 &&
 		s.RateBlocked.Load() == 0 && s.InjectionsFound.Load() == 0 &&
 		s.RequestSecrets.Load() == 0 && s.TokensSaved.Load() == 0 &&
-		s.AnomalyWarnings.Load() == 0
+		s.AnomalyWarnings.Load() == 0 && s.EntropyAudited.Load() == 0
 }
 
 // Summary renders a multi-line human report. pricePer1k (USD per 1000 tokens)
@@ -95,6 +96,7 @@ func (s *Stats) Summary(pricePer1k float64) string {
 	line("rate-limit blocks", s.RateBlocked.Load())
 	line("injections neutralized", s.InjectionsFound.Load())
 	line("secrets in requests", s.RequestSecrets.Load())
+	line("entropy flagged (audit)", s.EntropyAudited.Load())
 	line("anomaly warnings", s.AnomalyWarnings.Load())
 	line("tokens saved", s.TokensSaved.Load())
 	line("bytes saved", s.BytesSaved.Load())

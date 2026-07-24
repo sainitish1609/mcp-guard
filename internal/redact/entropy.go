@@ -3,6 +3,7 @@ package redact
 import (
 	"math"
 	"regexp"
+	"strings"
 )
 
 // candidateRE isolates token-like runs that could be a generated credential:
@@ -21,20 +22,32 @@ const (
 	entropyMinClasses = 3   // of {lower, upper, digit, symbol}
 )
 
-// scanEntropy masks token-like substrings whose Shannon entropy and character
+// scanEntropy finds token-like substrings whose Shannon entropy and character
 // diversity look like a generated secret rather than natural text or an
-// identifier. It runs after the named patterns, so anything already masked
+// identifier, returning their byte-offset spans. When doMask is true the spans
+// are also replaced with the mask; otherwise the text is returned unchanged
+// (audit-only). It runs after the named patterns, so anything already masked
 // (which contains ':' and brackets outside the token charset) is untouched.
-func scanEntropy(text string) (string, int) {
-	count := 0
-	out := candidateRE.ReplaceAllStringFunc(text, func(tok string) string {
-		if looksLikeSecret(tok) {
-			count++
-			return mask("high-entropy")
+func scanEntropy(text string, doMask bool) (string, [][2]int) {
+	var spans [][2]int
+	for _, loc := range candidateRE.FindAllStringIndex(text, -1) {
+		if looksLikeSecret(text[loc[0]:loc[1]]) {
+			spans = append(spans, [2]int{loc[0], loc[1]})
 		}
-		return tok
-	})
-	return out, count
+	}
+	if len(spans) == 0 || !doMask {
+		return text, spans
+	}
+	var b strings.Builder
+	m := mask("high-entropy")
+	last := 0
+	for _, s := range spans {
+		b.WriteString(text[last:s[0]])
+		b.WriteString(m)
+		last = s[1]
+	}
+	b.WriteString(text[last:])
+	return b.String(), spans
 }
 
 // looksLikeSecret applies the length, class-diversity, and entropy gates.

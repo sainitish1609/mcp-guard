@@ -81,6 +81,12 @@ func (l *Logger) Redacted(tool, summary string) {
 	l.write(config.LogInfo, "redacted", fmt.Sprintf("tool=%q %s", tool, summary))
 }
 
+// EntropyAudit logs high-entropy candidates that were flagged but NOT masked
+// (audit-only mode). The payload is unchanged; this is a heads-up with offsets.
+func (l *Logger) EntropyAudit(tool, summary string) {
+	l.write(config.LogInfo, "entropy", fmt.Sprintf("tool=%q flagged (audit-only, not masked) %s", tool, summary))
+}
+
 // Injection logs neutralized/observed prompt-injection content in a result.
 func (l *Logger) Injection(tool, summary string) {
 	l.write(config.LogError, "injection", fmt.Sprintf("tool=%q %s", tool, summary))
