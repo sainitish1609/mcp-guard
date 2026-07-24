@@ -35,6 +35,38 @@ When AI agents run tools like `@modelcontextprotocol/server-filesystem` or `post
 
 ---
 
+## 🎯 Threat Model — what this does and doesn't replace
+
+`mcp-guard` is **defense-in-depth for the agent boundary**, not a replacement for good security hygiene. Being precise about that matters more than sounding impressive.
+
+**What it addresses**
+
+| Risk | How `mcp-guard` handles it |
+| --- | --- |
+| Sensitive data leaving your machine when an agent reads a file or query result | Redacted before it reaches the model |
+| Instructions injected into content your agent consumes (files, web pages, **tool descriptions**) | Hidden Unicode stripped, directives neutralized |
+| An agent writing to paths it was never meant to touch | Blocked, including via `../` traversal and symlinks |
+| A runaway or compromised agent enumerating your filesystem | Rate-limited, read-bursts flagged |
+| No record of any of the above | Every action audited to stderr (text or JSON Lines) |
+
+**What it explicitly does _not_ replace**
+
+- **Short-lived credentials.** If you can use STS / OIDC federation / SSO, do that first — it is the stronger control. Rotation shrinks the blast radius; `mcp-guard` reduces the chance of disclosure in the first place. They solve different halves, and the credential fix is the more important one.
+- **A secrets manager or least-privilege IAM.** A key that was never on disk cannot be read off disk.
+- **Reviewing what your agent actually does.** Guardrails constrain the blast radius; they do not make an unreviewed agent trustworthy.
+
+**Known limitations — read these before relying on it**
+
+- **Detection is heuristic.** Secret matching is pattern- plus entropy-based, and injection detection is signature-based. A novel credential format or a carefully-worded injection *will* get through. Treat it as a layer, not a guarantee.
+- **It only sees traffic that flows through it.** An MCP server that makes its own outbound network calls (a `fetch`-style server, telemetry, a phone-home) is invisible to `mcp-guard`. It secures the client↔server channel, not the server's own egress.
+- **Request-side secret scanning warns, it does not block.** Some tools legitimately need credentials in their arguments, so blocking by default would break them.
+- **Compression can alter text.** It is off by default and skips read-for-edit tools, because rewriting a file the agent is about to patch corrupts the diff.
+- **It does not authenticate the MCP server.** A malicious server can still return wrong (if sanitized) answers. Injection defense reduces that risk; it does not eliminate it.
+
+> If you find a case where a real secret or injection payload slips through, that is a bug worth [opening an issue](https://github.com/sainitish1609/mcp-guard/issues) for — false negatives and false positives are both regressions.
+
+---
+
 ## 🏗️ Architecture
 
 ```
