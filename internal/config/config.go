@@ -22,18 +22,27 @@ const (
 
 // Config is the fully-resolved configuration handed to the proxy.
 type Config struct {
-	RedactSecrets bool     `json:"redact_secrets"`
-	Compress      bool     `json:"compress"`
-	MaxTokens     int      `json:"max_tokens"`
-	BlockShell    bool     `json:"block_shell"`
-	AnnotateTools bool     `json:"annotate_tools"`
-	ProtectPaths  []string `json:"protect_paths"`
-	ProtectNames  []string `json:"protect_names"`
-	ShellTools    []string `json:"shell_tools"`
-	AllowShell    []string `json:"allow_shell"`
-	CustomPatterns []CustomPattern `json:"custom_patterns"`
-	LogLevel      LogLevel `json:"log_level"`
-	DryRun        bool     `json:"dry_run"`
+	RedactSecrets       bool            `json:"redact_secrets"`
+	EntropyScan         bool            `json:"entropy_scan"`
+	ScanInjection       bool            `json:"scan_injection"`
+	NeutralizeInjection bool            `json:"neutralize_injection"`
+	ScanRequests        bool            `json:"scan_requests"`
+	Compress            bool            `json:"compress"`
+	MaxTokens           int             `json:"max_tokens"`
+	BlockShell          bool            `json:"block_shell"`
+	BlockSensitiveReads bool            `json:"block_sensitive_reads"`
+	AnnotateTools       bool            `json:"annotate_tools"`
+	RateLimit           int             `json:"rate_limit"` // tool calls/min, 0 = disabled
+	ProtectPaths        []string        `json:"protect_paths"`
+	ProtectNames        []string        `json:"protect_names"`
+	ShellTools          []string        `json:"shell_tools"`
+	AllowShell          []string        `json:"allow_shell"`
+	CustomPatterns      []CustomPattern `json:"custom_patterns"`
+	Stats               bool            `json:"stats"`
+	PricePer1kTokens    float64         `json:"price_per_1k_tokens"`
+	LogLevel            LogLevel        `json:"log_level"`
+	LogFormat           string          `json:"log_format"` // "text" or "json"
+	DryRun              bool            `json:"dry_run"`
 }
 
 // CustomPattern is a user-supplied secret regex with a label used in the mask.
@@ -74,15 +83,24 @@ func defaultShellTools() []string {
 // on, compression off (see plan risk note), tool annotation on.
 func Default() Config {
 	return Config{
-		RedactSecrets: true,
-		Compress:      false,
-		MaxTokens:     0,
-		BlockShell:    true,
-		AnnotateTools: true,
-		ProtectPaths:  defaultProtectPaths(),
-		ProtectNames:  defaultProtectNames(),
-		ShellTools:    defaultShellTools(),
-		LogLevel:      LogInfo,
+		RedactSecrets:       true,
+		EntropyScan:         true,
+		ScanInjection:       true,
+		NeutralizeInjection: true,
+		ScanRequests:        true,
+		Compress:            false,
+		MaxTokens:           0,
+		BlockShell:          true,
+		BlockSensitiveReads: false,
+		AnnotateTools:       true,
+		RateLimit:           0,
+		ProtectPaths:        defaultProtectPaths(),
+		ProtectNames:        defaultProtectNames(),
+		ShellTools:          defaultShellTools(),
+		Stats:               true,
+		PricePer1kTokens:    0.003, // rough blended input price; user-overridable
+		LogLevel:            LogInfo,
+		LogFormat:           "text",
 	}
 }
 

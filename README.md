@@ -2,44 +2,51 @@
 
 [![Go Version](https://img.shields.io/github/go-mod/go-version/sainitish1609/mcp-guard)](https://golang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](go.mod)
+[![Transport](https://img.shields.io/badge/transport-stdio%20%2B%20HTTP%2FSSE-blue.svg)](#-http--sse-remote-servers)
 
-> **The local privacy firewall, secret sanitizer, and token compressor for AI coding agents.**
+> **The local privacy firewall, prompt-injection shield, secret sanitizer, and token compressor for AI coding agents.**
 
-A security guardrail proxy for Model Context Protocol (MCP) servers.
+A zero-dependency security proxy for Model Context Protocol (MCP) servers.
 
 ![mcp-guard demo](assets/demo.gif)
 
-`mcp-guard` is an ultra-fast, zero-dependency Go binary that sits transparently in the stdio JSON-RPC path between your editor (Claude Code, Cursor, VS Code) and any [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server.
+`mcp-guard` is an ultra-fast, zero-dependency Go binary that sits transparently between your editor (Claude Code, Cursor, VS Code, Copilot) and any [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server — over **stdio** or **HTTP/SSE**.
 
-It acts as a local security proxy—ensuring your sensitive API keys, database credentials, and protected paths (`~/.ssh`, `.env`, `.git`) are **never leaked to cloud LLMs** or mutated by autonomous tool execution.
+It ensures your API keys, database credentials, and protected paths (`~/.ssh`, `.env`, `.git`) are **never leaked to cloud LLMs**, that malicious content **cannot hijack your agent**, and that autonomous tool execution **cannot touch what it shouldn't** — all while trimming token spend.
 
 ---
 
 ## 💡 Why mcp-guard?
 
-When AI agents run tools like `@modelcontextprotocol/server-filesystem` or `postgres-mcp`, they read raw files directly from your disk. If a file contains AWS keys, JWTs, or database passwords, **those credentials are sent directly to cloud AI APIs in plain text.**
+When AI agents run tools like `@modelcontextprotocol/server-filesystem` or `postgres-mcp`, they read raw files and query results straight off your machine. Three things go wrong:
 
-`mcp-guard` runs locally on your machine to solve this without breaking agent execution:
-- 🔒 **Zero-Trust Input/Output Inspection:** Intercepts both requests and responses on `stdin`/`stdout`.
-- ⚡ **Zero-Dependency Go Binary:** Negligible performance overhead (< 1ms execution penalty).
-- 🔄 **Recoverable Guardrail Errors:** Sends structured `isError: true` responses so AI agents can gracefully self-correct instead of crashing with transport failures.
+1. **Secrets leak.** A file with AWS keys, JWTs, or DB passwords gets shipped verbatim to a cloud LLM.
+2. **Agents get hijacked.** A file or web page can carry *hidden instructions* — invisible Unicode or "ignore all previous instructions" — that the model obeys (prompt injection / tool poisoning).
+3. **Agents overreach.** An autonomous agent overwrites `~/.ssh/authorized_keys`, pipes `curl … | bash`, or reads 100 files in a burst.
+
+`mcp-guard` runs **locally** and fixes all three without breaking agent execution:
+
+- 🔒 **Zero-Trust I/O Inspection** — intercepts both requests and responses on every transport.
+- ⚡ **Zero-Dependency Go Binary** — pure standard library, sub-millisecond overhead.
+- 🔄 **Recoverable Guardrail Errors** — returns structured `isError: true` results so agents self-correct instead of crashing.
+- 📊 **Visible Value** — a session summary shows exactly what it protected and how many tokens/dollars it saved.
 
 ---
 
 ## 🏗️ Architecture
 
-
 ```
-
-┌─────────────────────────┐          ┌─────────────────────────┐          ┌─────────────────────────┐
-│                         │          │                         │          │                         │
-│  Editor / MCP Client    │  stdin   │        mcp-guard        │  stdin   │       MCP Server        │
-│                         ├─────────►│                         ├─────────►│                         │
-│  (Claude Code / Cursor) │          │  • Intercepts Writes    │          │  (e.g., filesystem,     │
-│                         │  stdout  │  • Redacts Secrets      │  stdout  │   postgres, github)     │
-│                         │◄─────────┤  • Compresses Context   │◄─────────┤                         │
-└─────────────────────────┘          └─────────────────────────┘          └─────────────────────────┘
-
+┌─────────────────────────┐          ┌────────────────────────────────────┐          ┌─────────────────────────┐
+│                         │  request │             mcp-guard              │  request │                         │
+│  Editor / MCP Client    ├─────────►│  ┌──────────────────────────────┐  ├─────────►│       MCP Server        │
+│                         │          │  │ →  guardrails · shell block   │  │          │  (filesystem, postgres, │
+│  (Claude Code / Cursor  │          │  │    rate-limit · req-secrets   │  │          │   github, http, …)      │
+│   / VS Code / Copilot)  │◄─────────┤  │ ←  redact · entropy · inject  │  │◄─────────┤                         │
+│                         │ response │  │    defense · compression      │  │ response │                         │
+└─────────────────────────┘          │  └──────────────────────────────┘  │          └─────────────────────────┘
+                                      │   stdio  ·  HTTP / SSE  ·  audit    │
+                                      └────────────────────────────────────┘
 ```
 
 ---
@@ -47,35 +54,65 @@ When AI agents run tools like `@modelcontextprotocol/server-filesystem` or `post
 ## ✨ Features
 
 ### 1. 🔑 Secret & Credential Redaction (Server ➔ Client)
-Scans tool results for 10+ sensitive credential formats before they can reach the LLM:
-* **Cloud & AI Keys:** AWS (`AKIA...`), Anthropic, OpenAI, Stripe, Google, GitHub PATs.
-* **Database URIs:** Masks passwords in `postgres://user:pass@host`, `mongodb+srv://`, `redis://`.
-* **Private Keys & JWTs:** Full block masking for RSA/PEM keys and Bearer tokens.
+Scans **every string** in a tool result — including `structuredContent` mirrors and tool descriptions — for 12+ credential formats before they reach the LLM:
+* **Cloud & AI keys:** AWS (`AKIA…`), Anthropic, OpenAI, Stripe, Google, Slack, GitHub PATs.
+* **Database URIs:** masks the password in `postgres://user:pass@host`, `mongodb+srv://`, `redis://:pass@host` — even passwords containing `@`.
+* **Private keys & JWTs:** full-block masking for RSA/PEM keys and Bearer tokens.
+* **🆕 High-entropy catch-all:** an optional Shannon-entropy pass masks *unknown-format* generated secrets that match no named pattern, using a character-class discriminator to avoid flagging git SHAs, UUIDs, or file paths.
 
 ```env
 # Before mcp-guard:
 AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-DATABASE_URL=postgres://admin:SuperSecret123!@db.internal:5432/prod
+DATABASE_URL=postgres://admin:P@ssw0rd123!@db.internal:5432/prod
+SESSION=nQ7wLp4sZa1cFd8gHj0tYuXk9mR2vB3E
 
 # After mcp-guard:
 AWS_ACCESS_KEY_ID=[REDACTED:aws-access-key]
 DATABASE_URL=postgres://admin:[REDACTED:uri-credentials]@db.internal:5432/prod
-
+SESSION=[REDACTED:high-entropy]
 ```
 
-### 2. 🛡️ Guardrail Policy & Write Protection (Client ➔ Server)
+### 2. 🧬 Prompt-Injection & Tool-Poisoning Defense 🆕
+Content coming back from a server (file bodies, web pages, even a **malicious server's own tool descriptions**) can carry instructions aimed at your agent. mcp-guard neutralizes both vectors:
+* **Hidden Unicode** — strips invisible "tag" characters (`U+E0000` block used to smuggle invisible ASCII), bidirectional-override controls, and zero-width spaces. Legitimate script/emoji joiners are preserved.
+* **Injection directives** — high-signal phrases like *"ignore all previous instructions"*, *"do not tell the user"*, or *"reveal your system prompt"* are replaced with a visible `[mcp-guard: neutralized-injection]` marker (or detect-only, your choice).
 
-Prevents AI agents from modifying or reading protected paths, regardless of relative path traversal tricks (`../.ssh`):
+### 3. 🛡️ Directory Guardrails & Write Protection (Client ➔ Server)
+Blocks agents from modifying protected paths — through relative traversal (`../.ssh`) **and symlink escapes** 🆕 (a `project/data → ~/.ssh` link is resolved and caught):
+* **Protected directories (anywhere in the path):** `~/.ssh`, `.aws`, `.gnupg`, `.kube`, `.git`, `.env*`
+* **Sensitive files:** `id_rsa`, `id_ed25519`, `authorized_keys`, `.npmrc`, `.netrc`, `.pypirc`, `.dockercfg`
+* **Shell-script blocking:** refuses `*.sh`/`*.ps1`, `bash -c`, and `curl … | sh` patterns by default.
+* **🆕 Optional sensitive-read blocking:** hard-block *reads* of protected paths (default: allow the read and redact its contents instead).
 
-* **Protected Paths:** `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `.git`, `.env*`
-* **Sensitive Files:** `id_rsa`, `authorized_keys`, `.npmrc`, `.netrc`, `.pypirc`
-* **Shell Script Blocking:** Blocks dangerous shell execution tools by default.
+### 4. 🚦 Exfiltration & Anomaly Guardrails 🆕
+A behavioral layer on top of per-call checks:
+* **Rate limiting** — throttle runaway or compromised agents past a calls-per-minute cap.
+* **Read-burst detection** — warns on a sudden spike of distinct file reads (a classic bulk-exfiltration signature).
+* **Outbound secret scanning** — warns when a *tool call's arguments* carry secret-shaped data, so a key the agent just read can't silently be forwarded to a phone-home server unnoticed.
 
-### 3. ⚡ Context Token Compression (Opt-In)
+### 5. ⚡ Context Token Compression (Opt-In)
+Strips redundant comments and whitespace to save context-window capacity, with a code-aware token estimator for accurate accounting.
+> *Compression automatically skips read-for-edit tools (`read_file`, `get_file_contents`) to preserve exact diff boundaries for safe file editing.*
 
-Strip redundant line/block comments and whitespace to save context window capacity.
+### 6. 📊 Session Summary & Structured Audit 🆕
+* On exit (and on `SIGUSR1`) mcp-guard prints a **summary**: secrets redacted by type, writes/reads/shell blocked, injections neutralized, tokens saved, and an **estimated `$` saved**.
+* All activity streams to **stderr** as human text or **JSON Lines** (`--log-format json`) for SIEM ingestion. stdout carries only the MCP protocol.
 
-> *Note: Compression automatically skips read-for-edit tools (`read_file`, `get_file_contents`) to preserve exact diff boundaries for safe file editing.*
+```
+mcp-guard session summary
+  secrets redacted       4
+      aws-access-key     1
+      uri-credentials    1
+      high-entropy       2
+  writes blocked         1
+  injections neutralized 3
+  tokens saved           1840
+  est. cost saved        $0.0055
+```
+
+### 7. 🎛️ Policy Profiles & Hot Reload 🆕
+* **Profiles** apply per-server strictness in one flag: `--profile strict|standard|permissive` (e.g. lock down a shell server, relax a read-only docs server).
+* **Hot reload** — send `SIGHUP` to re-read the config and swap policy live, without dropping the agent connection.
 
 ---
 
@@ -89,6 +126,7 @@ go install github.com/sainitish1609/mcp-guard/cmd/mcp-guard@latest
 git clone https://github.com/sainitish1609/mcp-guard.git
 cd mcp-guard
 go build -o mcp-guard ./cmd/mcp-guard
+```
 
 ---
 
@@ -99,8 +137,7 @@ go build -o mcp-guard ./cmd/mcp-guard
 Wrap any standard MCP server command using `mcp-guard --`:
 
 ```bash
-claude mcp add postgres -- mcp-guard --redact-secrets --max-tokens 4000 -- npx -y @modelcontextprotocol/server-postgres
-
+claude mcp add postgres -- mcp-guard --profile strict --max-tokens 4000 -- npx -y @modelcontextprotocol/server-postgres
 ```
 
 ### Cursor / VS Code (`.vscode/mcp.json`)
@@ -112,6 +149,7 @@ claude mcp add postgres -- mcp-guard --redact-secrets --max-tokens 4000 -- npx -
       "command": "mcp-guard",
       "args": [
         "--redact-secrets",
+        "--scan-injection",
         "--block-shell",
         "--",
         "npx",
@@ -122,8 +160,17 @@ claude mcp add postgres -- mcp-guard --redact-secrets --max-tokens 4000 -- npx -
     }
   }
 }
-
 ```
+
+### 🌐 HTTP / SSE (remote servers)
+
+Protect a **remote** MCP server that speaks Streamable-HTTP/SSE — same pipeline, no child process:
+
+```bash
+mcp-guard --profile strict --http-listen :8080 --http-upstream https://my-mcp-host.example/mcp
+```
+
+Point your client at `http://localhost:8080` and every JSON and SSE message is inspected in flight.
 
 ---
 
@@ -131,14 +178,31 @@ claude mcp add postgres -- mcp-guard --redact-secrets --max-tokens 4000 -- npx -
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--redact-secrets` | `true` | Mask API keys, tokens, and database passwords in tool responses |
-| `--block-shell` | `true` | Block execution of shell scripts in exec tools |
-| `--annotate-tools` | `true` | Append policy notices to `tools/list` so agents know boundaries upfront |
+| `--profile` | *(none)* | Policy preset: `strict` \| `standard` \| `permissive` |
+| `--redact-secrets` | `true` | Mask API keys, tokens, and database passwords in results |
+| `--entropy-scan` | `true` | Also mask high-entropy tokens matching no known pattern |
+| `--scan-injection` | `true` | Strip hidden Unicode & neutralize prompt-injection directives |
+| `--neutralize-injection` | `true` | Rewrite detected directives (off = detect + log only) |
+| `--scan-requests` | `true` | Warn when outbound tool-call arguments contain secrets |
+| `--block-shell` | `true` | Block execution of shell scripts in exec-like tools |
+| `--block-sensitive-reads` | `false` | Block reads of protected paths (default: allow + redact) |
+| `--rate-limit N` | `0` | Max tool calls/min before throttling (0 = disabled) |
+| `--annotate-tools` | `true` | Append policy notices to `tools/list` so agents know boundaries |
 | `--compress` | `false` | Strip comments and blank lines from context (safe tools only) |
 | `--max-tokens N` | `0` | Approximate token budget cap per result block (0 = unlimited) |
-| `--protect-paths` | *(defaults)* | Custom comma-separated protected paths (overrides defaults) |
-| `--log-level` | `info` | Set logging verbosity (`silent`, `error`, `info`, `debug` on **stderr**) |
-| `--dry-run` | `false` | Log security events to stderr without mutating stdin/stdout |
+| `--protect-paths` | *(defaults)* | Comma-separated protected paths (overrides defaults) |
+| `--protect-names` | *(defaults)* | Comma-separated protected path segments (overrides defaults) |
+| `--allow-shell` | *(none)* | Comma-separated allow-list substrings for shell commands |
+| `--stats` | `true` | Print a session summary on exit and on `SIGUSR1` |
+| `--price-per-1k` | `0.003` | USD per 1K tokens for the cost-saved estimate |
+| `--log-level` | `info` | Verbosity: `silent` \| `error` \| `info` \| `debug` (**stderr**) |
+| `--log-format` | `text` | Log format: `text` \| `json` (JSON Lines) |
+| `--dry-run` | `false` | Log events without mutating the stream |
+| `--http-listen` | *(none)* | Run as an HTTP/SSE proxy on this address (e.g. `:8080`) |
+| `--http-upstream` | *(none)* | Upstream MCP server URL for HTTP/SSE mode |
+| `--config` | *(none)* | Path to a JSON config file (optional) |
+
+Signals: **`SIGHUP`** reloads config live · **`SIGUSR1`** prints an interim session summary.
 
 ---
 
@@ -150,11 +214,19 @@ go test ./... -v
 
 # Run static analysis
 go vet ./...
+```
 
+Try it end-to-end against a real server:
+
+```bash
+printf '%s\n%s\n' \
+'{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"x","version":"1"}}}' \
+'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_text_file","arguments":{"path":"/path/to/a/.env"}}}' \
+| mcp-guard --profile strict -- npx -y @modelcontextprotocol/server-filesystem /path/to
 ```
 
 ---
 
 ## 📄 License
 
-Distributed under the MIT License. See [`LICENSE`](https://www.google.com/search?q=LICENSE) for details.
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.

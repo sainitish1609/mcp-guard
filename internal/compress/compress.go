@@ -27,12 +27,40 @@ func SkipTool(toolName string) bool {
 // approxTokens estimates token count as ~4 characters per token.
 func approxTokens(s string) int { return (len(s) + 3) / 4 }
 
+// EstimateTokens gives a closer-to-BPE token estimate than a flat chars/4 rule
+// by counting word-like runs and standalone punctuation/symbol characters
+// separately — closer to how byte-pair encoders split source code and prose.
+// It stays dependency-free (no vocab file) and is used for stats accounting.
+func EstimateTokens(s string) int {
+	tokens := 0
+	inWord := false
+	for _, r := range s {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_':
+			if !inWord {
+				tokens++ // start of a new word-ish run
+				inWord = true
+			}
+		case r == ' ' || r == '\t':
+			inWord = false
+		default:
+			// Punctuation, symbols, and newlines each tend to be their own token.
+			inWord = false
+			tokens++
+		}
+	}
+	if tokens == 0 && len(s) > 0 {
+		return 1
+	}
+	return tokens
+}
+
 // Result reports what a Text call did, for auditing.
 type Result struct {
-	Changed        bool
-	BytesBefore    int
-	BytesAfter     int
-	Truncated      bool
+	Changed     bool
+	BytesBefore int
+	BytesAfter  int
+	Truncated   bool
 }
 
 // Text compresses a single text block. maxTokens <= 0 disables truncation.

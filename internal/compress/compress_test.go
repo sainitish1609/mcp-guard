@@ -63,3 +63,17 @@ func TestSkipTool(t *testing.T) {
 		t.Fatal("list_tables should not be skipped")
 	}
 }
+
+func TestEstimateTokens(t *testing.T) {
+	// Word runs, punctuation, and symbols each contribute; empty is zero.
+	if EstimateTokens("") != 0 {
+		t.Fatal("empty should be 0 tokens")
+	}
+	if got := EstimateTokens("hello world"); got != 2 {
+		t.Fatalf("two words = 2 tokens, got %d", got)
+	}
+	// Code with punctuation yields more tokens than a flat word count.
+	if got := EstimateTokens("foo(bar, baz);"); got < 6 {
+		t.Fatalf("expected punctuation-aware count, got %d", got)
+	}
+}

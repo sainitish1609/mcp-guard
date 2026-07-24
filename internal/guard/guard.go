@@ -19,6 +19,11 @@ const AnnotationMarker = "[Protected by mcp-guard"
 // mutatingVerbs are tool-name substrings implying a write/modify operation.
 var mutatingVerbs = []string{"write", "edit", "create", "delete", "remove", "move", "rename", "put", "append", "patch", "save", "mkdir", "copy"}
 
+// readVerbs are tool-name substrings implying a read/fetch operation. Used only
+// when BlockSensitiveReads is enabled to hard-block reads of protected paths
+// (by default such reads are allowed and their contents are redacted instead).
+var readVerbs = []string{"read", "get", "cat", "open", "view", "fetch", "load", "show"}
+
 // Guard holds resolved policy state.
 type Guard struct {
 	cfg  config.Config
@@ -50,11 +55,34 @@ func (g *Guard) Inspect(toolName string, args map[string]json.RawMessage) (block
 			}
 		}
 	}
+
+	if g.cfg.BlockSensitiveReads && g.isReading(lname) {
+		for _, val := range stringArgs(args) {
+			if hit, ok := g.protectedPath(val); ok {
+				return true, "read of '" + val + "' is restricted by mcp-guard security policy (protected path: " + hit + ")"
+			}
+		}
+	}
 	return false, ""
 }
 
 func (g *Guard) isMutating(lname string) bool {
 	for _, v := range mutatingVerbs {
+		if strings.Contains(lname, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsRead reports whether the named tool is a read/fetch operation, for the
+// anomaly detector's read-burst signal.
+func (g *Guard) IsRead(toolName string) bool {
+	return g.isReading(strings.ToLower(toolName))
+}
+
+func (g *Guard) isReading(lname string) bool {
+	for _, v := range readVerbs {
 		if strings.Contains(lname, v) {
 			return true
 		}
@@ -124,12 +152,16 @@ func (g *Guard) protectedPath(target string) (string, bool) {
 		abs = a
 	}
 
+	// Resolve symlinks on the existing portion of the path so a benign-looking
+	// link (e.g. project/data -> ~/.ssh) cannot smuggle a write past the guard.
+	resolved := resolveExisting(abs)
+
 	// Name-based guard: a sensitive segment anywhere in the path.
-	if hit, ok := matchesName(clean, g.cfg.ProtectNames); ok {
-		return hit, true
-	}
-	if abs != "" {
-		if hit, ok := matchesName(abs, g.cfg.ProtectNames); ok {
+	for _, cand := range []string{clean, abs, resolved} {
+		if cand == "" {
+			continue
+		}
+		if hit, ok := matchesName(cand, g.cfg.ProtectNames); ok {
 			return hit, true
 		}
 	}
@@ -137,7 +169,7 @@ func (g *Guard) protectedPath(target string) (string, bool) {
 	// Path-based guard: absolute prefixes and relative component fallbacks.
 	for _, p := range g.cfg.ProtectPaths {
 		if filepath.IsAbs(p) {
-			if abs != "" && underPath(abs, p) {
+			if (abs != "" && underPath(abs, p)) || (resolved != "" && underPath(resolved, p)) {
 				return p, true
 			}
 		} else {
@@ -147,6 +179,43 @@ func (g *Guard) protectedPath(target string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// resolveExisting resolves symlinks over the deepest existing ancestor of p and
+// re-appends the non-existent remainder. Returns p unchanged if nothing can be
+// resolved. This lets the guard see through a symlinked directory even when the
+// final target file does not exist yet (the common case for a write).
+func resolveExisting(p string) string {
+	if p == "" {
+		return p
+	}
+	cur := p
+	var tail []string
+	for {
+		if _, err := os.Lstat(cur); err == nil {
+			real, err := filepath.EvalSymlinks(cur)
+			if err != nil {
+				return p
+			}
+			parts := append([]string{real}, reverse(tail)...)
+			return filepath.Join(parts...)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		tail = append(tail, filepath.Base(cur))
+		cur = parent
+	}
+}
+
+// reverse returns a reversed copy of s.
+func reverse(s []string) []string {
+	out := make([]string, len(s))
+	for i, v := range s {
+		out[len(s)-1-i] = v
+	}
+	return out
 }
 
 // matchesName reports the first protected name that appears as a path segment in

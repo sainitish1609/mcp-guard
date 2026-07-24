@@ -64,6 +64,42 @@ func TestBlocksTraversalIntoProtected(t *testing.T) {
 	}
 }
 
+func TestBlocksWriteThroughSymlinkEscape(t *testing.T) {
+	// A symlinked directory pointing at a protected location must not let a write
+	// slip past the guard.
+	dir := t.TempDir()
+	protected := filepath.Join(dir, "realsecrets", ".ssh")
+	if err := os.MkdirAll(protected, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "innocent")
+	if err := os.Symlink(filepath.Join(dir, "realsecrets"), link); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+	g := newGuard(t)
+	target := filepath.Join(link, ".ssh", "authorized_keys") // dir/innocent/.ssh/...
+	blocked, reason := g.Inspect("write_file", args(map[string]string{"path": target}))
+	if !blocked {
+		t.Fatalf("expected write through symlink to be blocked, reason=%q", reason)
+	}
+}
+
+func TestBlockSensitiveReadsOptIn(t *testing.T) {
+	cfg := config.Default()
+	cfg.BlockSensitiveReads = true
+	cfg.ExpandPaths()
+	g := New(cfg)
+	// With the option on, a read of a protected path is blocked.
+	blocked, _ := g.Inspect("read_file", args(map[string]string{"path": "~/.ssh/id_rsa"}))
+	if !blocked {
+		t.Fatal("expected sensitive read to be blocked when option enabled")
+	}
+	// Default guard (option off) allows the read (contents get redacted instead).
+	if b, _ := newGuard(t).Inspect("read_file", args(map[string]string{"path": "~/.ssh/id_rsa"})); b {
+		t.Fatal("sensitive read should be allowed by default")
+	}
+}
+
 func TestBlocksDotSshAnywhereNotJustHome(t *testing.T) {
 	g := newGuard(t)
 	// A .ssh directory inside an unrelated sandbox must still be protected.

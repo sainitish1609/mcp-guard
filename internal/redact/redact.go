@@ -20,6 +20,7 @@ type Hit struct {
 // Engine holds the compiled pattern set (built-ins plus any custom patterns).
 type Engine struct {
 	patterns []Pattern
+	entropy  bool
 }
 
 // New builds an Engine from the built-in patterns and any user custom patterns.
@@ -40,6 +41,10 @@ func New(custom []config.CustomPattern) *Engine {
 	}
 	return &Engine{patterns: pats}
 }
+
+// EnableEntropy toggles the high-entropy catch-all pass, which masks generated
+// credentials that match no named pattern.
+func (e *Engine) EnableEntropy(on bool) { e.entropy = on }
 
 // mask is the redaction placeholder for a given pattern name.
 func mask(name string) string { return "[REDACTED:" + name + "]" }
@@ -66,6 +71,12 @@ func (e *Engine) Scan(text string) (string, []Hit) {
 		}
 		out = p.re.ReplaceAllString(out, mask(p.Name))
 		hits = append(hits, Hit{Pattern: p.Name, Count: len(matches)})
+	}
+	if e.entropy {
+		if masked, count := scanEntropy(out); count > 0 {
+			out = masked
+			hits = append(hits, Hit{Pattern: "high-entropy", Count: count})
+		}
 	}
 	return out, hits
 }
